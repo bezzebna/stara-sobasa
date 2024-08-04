@@ -1,0 +1,6 @@
+node_modules/
+application.yml
+config.json
+Lavalink.jar
+bot.log
+lavalink.log
