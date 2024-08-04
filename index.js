@@ -57,6 +57,8 @@ const music = new LavalinkManager({
 	}
 });
 
+const disabledChannels = {};
+
 async function playFragment(guildId, voiceChannelId, textChannelId, requester) {
 	const oldPlayer = music.getPlayer(guildId);
 	if(oldPlayer) { // TODO reuse old players
@@ -94,7 +96,7 @@ async function playFragment(guildId, voiceChannelId, textChannelId, requester) {
 }
 
 function findChannel(guild) {
-	const channels = guild.channels.filter(c => c.id !== guild.afkChannelID && c instanceof Eris.VoiceChannel && c.voiceMembers.some(m => !m.bot));
+	const channels = guild.channels.filter(c => c.id !== guild.afkChannelID && !disabledChannels[guild.id + c.id] && c instanceof Eris.VoiceChannel && c.voiceMembers.some(m => !m.bot));
 	if(channels.length !== 0) {
 		const channel = channels[Math.floor(Math.random() * channels.length)];
 		playFragment(channel.guild.id, channel.id, channel.id, bot.user).catch(e => {
@@ -105,7 +107,7 @@ function findChannel(guild) {
 
 function randomPlay() {
 	bot.guilds.forEach(findChannel);
-	setTimeout(randomPlay, 210000 + Math.floor(Math.random() * 210000));
+	setTimeout(randomPlay, 1800000 + Math.floor(Math.random() * 1800000)); // 30 to 60 minutes
 }
 
 function getChannel(msg) {
@@ -222,10 +224,17 @@ bot.on("error", errFunc).on("ready", () => {
 	if(player) {
 		player.destroy("Guild deleted");
 	}
-}).on("voiceChannelLeave", async (member, oldChannel) => {
-	const player = await music.getPlayer(oldChannel.guild.id);
-	if(player && !oldChannel.voiceMembers.some(m => !m.bot)) {
-		player.destroy("Everyone left the voice channel");
+}).on("voiceChannelLeave", async (member, channel) => {
+	if(!channel.voiceMembers.some(m => !m.bot)) {
+		const id = channel.guild.id + channel.id;
+		if(disabledChannels[id]) {
+			delete disabledChannels[id];
+		}
+
+		const player = await music.getPlayer(channel.guild.id);
+		if(player) {
+			player.destroy("Everyone left the voice channel");
+		}
 	}
 })/*.on("voiceChannelJoin", async (member, channel) => {
 	const player = await music.get(channel.guild.id);
@@ -273,7 +282,7 @@ bot.on("error", errFunc).on("ready", () => {
 			"`" + config.prefix + "co_umiesz?|" + config.prefix + "pokaz` Shows this message\n" +
 			"`" + config.prefix + "tekst` Shows the text\n" +
 			"`" + config.prefix + "chodz|" + config.prefix + "dawaj|" + config.prefix + "zapierdalaj|" + config.prefix + "zakurwiaj` Joins your channel\n" +
-			"`" + config.prefix + "do_spania|" + config.prefix + "spac` Temporarily disables auto joining\n" +
+			"`" + config.prefix + "do_spania|" + config.prefix + "spac` Temporarily disables auto joining for your channel\n" +
 			"`" + config.prefix + "tepnij|" + config.prefix + "tepaj <czas>` Seeks the playback to the time provided\n" +
 			"`" + config.prefix + "daj_glos <procent>` Changes volume of the playback (1-1000, 100 = default)\n" +
 			"`" + config.prefix + "daj_glos_efektu <procent>` Changes volume of the effect (1-5, 1 = default)\n" +
@@ -360,6 +369,20 @@ W sercu i ustach.
 			volume: 100,
 			startTime: 0
 		});
+	} else if(cmd === "do_spania" || cmd === "spac") {
+		const channel = getChannel(msg);
+		if(!channel) {
+			return;
+		}
+
+		const id = msg.guildID + channel.id;
+		if(disabledChannels[id]) {
+			delete disabledChannels[id];
+			bot.createMessage(msg.channel.id, "Re-enabled auto joining for your channel.").catch(errFunc);
+		} else {
+			disabledChannels[id] = true;
+			bot.createMessage(msg.channel.id, "Temporarily disabled auto joining for your channel.").catch(errFunc);
+		}
 	} else if(cmd === "tepnij" || cmd === "tepaj") {
 		const split = args[0].split(":");
 		if(split.length > 3) {
