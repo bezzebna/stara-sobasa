@@ -1,25 +1,10 @@
 import path from "node:path";
 import fs from "node:fs/promises";
+
 import * as Eris from "eris";
 import { LavalinkManager, EQList } from "lavalink-client";
 
-function fmt(func, format, ...args) {
-	const date = new Date();
-	const hours = ("0" + date.getHours()).slice(-2);
-	const minutes = ("0" + date.getMinutes()).slice(-2);
-	const seconds = ("0" + date.getSeconds()).slice(-2);
-	func("[%s] " + format, hours + ":" + minutes + ":" + seconds, ...args);
-}
-function log(format, ...args) {
-	fmt(console.log, format, ...args);
-}
-function err(format, ...args) {
-	fmt(console.error, format, ...args);
-}
-
-function errFunc(e) {
-	err("Discord", e);
-}
+import { log, err, errDiscord } from "./utils.js";
 
 process.title = "Bezzębna Stara Sobasa";
 process.chdir(import.meta.dirname);
@@ -27,6 +12,8 @@ process.chdir(import.meta.dirname);
 const config = JSON.parse(await fs.readFile("./config.json"));
 
 const fragmentsPath = path.join(import.meta.dirname, "fragments");
+
+const disabledChannels = {};
 
 const bot = new Eris.Client(config.token);
 const music = new LavalinkManager({
@@ -56,8 +43,6 @@ const music = new LavalinkManager({
 		maxPreviousTracks: 1
 	}
 });
-
-const disabledChannels = {};
 
 async function playFragment(guildId, voiceChannelId, textChannelId, requester) {
 	const oldPlayer = music.getPlayer(guildId);
@@ -113,7 +98,7 @@ function randomPlay() {
 function getChannel(msg) {
 	const channel = msg.member.voiceState.channelID;
 	if(!channel) {
-		bot.createMessage(msg.channel.id, "You must be in a voice channel.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "You must be in a voice channel.").catch(errDiscord);
 		return;
 	}
 	return channel;
@@ -121,7 +106,7 @@ function getChannel(msg) {
 
 function checkQueue(msg, player) {
 	if(!player.queue.current) {
-		bot.createMessage(msg.channel.id, "No song playing.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "No song playing.").catch(errDiscord);
 		return;
 	}
 	return true;
@@ -130,12 +115,12 @@ function checkQueue(msg, player) {
 async function getPlayer(msg, channel) {
 	const player = await music.getPlayer(msg.guildID);
 	if(!player) {
-		bot.createMessage(msg.channel.id, "Bot is not connected.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Bot is not connected.").catch(errDiscord);
 		return;
 	}
 
 	if(player.voiceChannelId !== channel) {
-		bot.createMessage(msg.channel.id, "You must be in the same voice channel as the bot.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "You must be in the same voice channel as the bot.").catch(errDiscord);
 		return;
 	}
 
@@ -166,7 +151,7 @@ music.on("playerSocketClosed", (player, payload) => {
 	log("[Lavalink on %s] Socket closed", player.guildId, payload);
 }).on("trackStart", (player, track) => {
 	//log("[Lavalink on %s] Track start", player.guildId, track);
-	if(track && track.info.artworkUrl) {
+	if(track && track.info && track.info.artworkUrl) {
 		bot.createMessage(player.textChannelId, { embed: {
 			title: "Now Playing",
 			description: track.info.author.replaceAll("*", "\\*").replaceAll("_", "\\_") + " **-** " + track.info.title.replaceAll("*", "\\*").replaceAll("_", "\\_"),
@@ -177,7 +162,7 @@ music.on("playerSocketClosed", (player, payload) => {
 			thumbnail: {
 				url: track.info.artworkUrl,
 			}
-		}}).catch(errFunc);
+		}}).catch(errDiscord);
 	}
 }).on("trackEnd", (player, track, payload) => {
 	//log("[Lavalink on %s] Track end", player.guildId, track, "Payload", payload);
@@ -188,7 +173,7 @@ music.on("playerSocketClosed", (player, payload) => {
 }).on("queueEnd", (player, track, payload) => {
 	// track = last track
 	//log("[Lavalink on %s] Queue end", player.guildId, payload);
-	//bot.createMessage(player.textChannel, "Queue has ended!").catch(errFunc);
+	//bot.createMessage(player.textChannel, "Queue has ended!").catch(errDiscord);
 });
 
 /*.on("nodeDisconnect", (node, { code, reason }) => {
@@ -197,7 +182,7 @@ music.on("playerSocketClosed", (player, payload) => {
 	}
 })*/
 
-bot.on("error", errFunc).on("ready", () => {
+bot.on("error", errDiscord).on("ready", () => {
 	log("[Discord] Ready");
 	bot.editStatus({ name: "Życie toczy się, z zębami czy bez...", type: 3 });
 
@@ -265,6 +250,7 @@ bot.on("error", errFunc).on("ready", () => {
 	// pokazywanie queue (jest arrayem)
 	// moze statsy node'a?
 	// moze custom equalizery?
+	// mozliwosc dzialania jako zwykly music bot
 
 	if(msg.author.bot) return;
 
@@ -280,7 +266,7 @@ bot.on("error", errFunc).on("ready", () => {
 	if(cmd === "co_umiesz?" || cmd === "pokaz") {
 		bot.createMessage(msg.channel.id,
 			"`" + config.prefix + "co_umiesz?|" + config.prefix + "pokaz` Shows this message\n" +
-			"`" + config.prefix + "tekst` Shows the text\n" +
+			"`" + config.prefix + "tekst` Shows the lyrics\n" +
 			"`" + config.prefix + "chodz|" + config.prefix + "dawaj|" + config.prefix + "zapierdalaj|" + config.prefix + "zakurwiaj` Joins your channel\n" +
 			"`" + config.prefix + "do_spania|" + config.prefix + "spac` Temporarily disables auto joining for your channel\n" +
 			"`" + config.prefix + "tepnij|" + config.prefix + "tepaj <czas>` Seeks the playback to the time provided\n" +
@@ -300,7 +286,7 @@ bot.on("error", errFunc).on("ready", () => {
 			"`" + config.prefix + "jebnij_vaporwave` Applies vaporwave effect to the playback\n" +
 			"`" + config.prefix + "jebnij_karaoke` Applies karaoke effect to the playback\n" +
 			"`" + config.prefix + "wyjdz|" + config.prefix + "wypierdalaj|" + config.prefix + "wykurwiaj` Leaves your channel"
-		).catch(errFunc);
+		).catch(errDiscord);
 	} else if(cmd == "tekst") {
 		bot.createMessage(msg.channel.id, `Sobas młody biznesmen
 Uderzył swoją starą
@@ -323,7 +309,7 @@ W sercu i ustach.
 Z zębami czy bez
 Miłość boli mocno
 W sercu i ustach.
-[x4]`).catch(errFunc);
+[x4]`).catch(errDiscord);
 	} else if(cmd === "chodz" || cmd === "dawaj" || cmd === "zapierdalaj" || cmd === "zakurwiaj") {
 		const channel = getChannel(msg);
 		if(!channel) {
@@ -378,21 +364,21 @@ W sercu i ustach.
 		const id = msg.guildID + channel.id;
 		if(disabledChannels[id]) {
 			delete disabledChannels[id];
-			bot.createMessage(msg.channel.id, "Re-enabled auto joining for your channel.").catch(errFunc);
+			bot.createMessage(msg.channel.id, "Re-enabled auto joining for your channel.").catch(errDiscord);
 		} else {
 			disabledChannels[id] = true;
-			bot.createMessage(msg.channel.id, "Temporarily disabled auto joining for your channel.").catch(errFunc);
+			bot.createMessage(msg.channel.id, "Temporarily disabled auto joining for your channel.").catch(errDiscord);
 		}
 	} else if(cmd === "tepnij" || cmd === "tepaj") {
 		const split = args[0].split(":");
 		if(split.length > 3) {
-			bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "seek <Hours:Minutes:Seconds>`").catch(errFunc);
+			bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "seek <Hours:Minutes:Seconds>`").catch(errDiscord);
 			return;
 		}
 
 		let pos = parseInt(split[split.length - 1], 10);
 		if(isNaN(pos)) {
-			bot.createMessage(msg.channel.id, "Invalid seconds number. Try `" + config.prefix + "seek <Hours:Minutes:Seconds>`").catch(errFunc);
+			bot.createMessage(msg.channel.id, "Invalid seconds number. Try `" + config.prefix + "seek <Hours:Minutes:Seconds>`").catch(errDiscord);
 			return;
 		}
 		pos *= 1000;
@@ -400,7 +386,7 @@ W sercu i ustach.
 		if(split.length >= 2) {
 			const minutes = parseInt(split[split.length - 2], 10);
 			if(isNaN(minutes)) {
-				bot.createMessage(msg.channel.id, "Invalid minutes number. Try `" + config.prefix + "seek <Hours:Minutes:Seconds>`").catch(errFunc);
+				bot.createMessage(msg.channel.id, "Invalid minutes number. Try `" + config.prefix + "seek <Hours:Minutes:Seconds>`").catch(errDiscord);
 				return;
 			}
 			pos += minutes * 60000;
@@ -409,7 +395,7 @@ W sercu i ustach.
 		if(split.length === 3) {
 			const hours = parseInt(split[0], 10);
 			if(isNaN(hours)) {
-				bot.createMessage(msg.channel.id, "Invalid hours number. Try `" + config.prefix + "seek <Hours:Minutes:Seconds>`").catch(errFunc);
+				bot.createMessage(msg.channel.id, "Invalid hours number. Try `" + config.prefix + "seek <Hours:Minutes:Seconds>`").catch(errDiscord);
 				return;
 			}
 			pos += hours * 3600000;
@@ -430,16 +416,16 @@ W sercu i ustach.
 		}
 
 		if(pos > player.queue.current.info.duration || pos < 0) {
-			bot.createMessage(msg.channel.id, "The position can't be bigger than the song's duration.").catch(errFunc);
+			bot.createMessage(msg.channel.id, "The position can't be bigger than the song's duration.").catch(errDiscord);
 			return;
 		}
 
 		await player.seek(pos);
-		bot.createMessage(msg.channel.id, "Seeked the current song.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Seeked the current song.").catch(errDiscord);
 	} else if(cmd === "daj_glos") {
 		const num = parseInt(args[0]);
 		if(isNaN(num) || num < 1 || num > 1000) {
-			bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "daj_glos <procent>`").catch(errFunc);
+			bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "daj_glos <procent>`").catch(errDiscord);
 			return;
 		}
 
@@ -458,11 +444,11 @@ W sercu i ustach.
 		}
 
 		await player.setVolume(num, true);
-		bot.createMessage(msg.channel.id, "Changed the volume.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Changed the volume.").catch(errDiscord);
 	} else if(cmd === "daj_glos_efektu") {
 		const num = parseInt(args[0]);
 		if(isNaN(num) || num < 0 || num > 5) {
-			bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "daj_glos_efektu <procent>`").catch(errFunc);
+			bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "daj_glos_efektu <procent>`").catch(errDiscord);
 			return;
 		}
 
@@ -481,11 +467,11 @@ W sercu i ustach.
 		}
 
 		await player.filterManager.setVolume(num);
-		bot.createMessage(msg.channel.id, "Changed the effect volume.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Changed the effect volume.").catch(errDiscord);
 	} else if(cmd === "jebnij_basem") {
 		const num = parseInt(args[0]);
 		if(isNaN(num)) {
-			bot.createMessage(message.channel.id, "Invalid command. Try `" + config.prefix + "jebnij_basem <mnoznik>`").catch(errFunc);
+			bot.createMessage(message.channel.id, "Invalid command. Try `" + config.prefix + "jebnij_basem <mnoznik>`").catch(errDiscord);
 			return;
 		}
 
@@ -505,7 +491,7 @@ W sercu i ustach.
 
 		if(num === 0) {
 			await player.filterManager.clearEQ();
-			bot.createMessage(message.channel.id, "Disabled bass boost for the current playback.").catch(errFunc);
+			bot.createMessage(message.channel.id, "Disabled bass boost for the current playback.").catch(errDiscord);
 		} else {
 			await player.filterManager.setEQ([
 				{ band: 0, gain: num * 0.5 },
@@ -514,12 +500,12 @@ W sercu i ustach.
 				{ band: 3, gain: num * 0.2 },
 				{ band: 4, gain: num * 0.1 }
 			]);
-			bot.createMessage(msg.channel.id, "Bass boosted the current playback.").catch(errFunc);
+			bot.createMessage(msg.channel.id, "Bass boosted the current playback.").catch(errDiscord);
 		}
 	} else if(cmd === "jebnij_efektem") {
 		const arg = args[0];
 		if(!arg) {
-			bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "jebnij_efektem <efekt>`. Effects:\nclear\n" + Object.keys(EQList).join("\n")).catch(errFunc);
+			bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "jebnij_efektem <efekt>`. Effects:\nclear\n" + Object.keys(EQList).join("\n")).catch(errDiscord);
 			return;
 		}
 		let effect;
@@ -531,7 +517,7 @@ W sercu i ustach.
 				}
 			}
 			if(!effect) {
-				bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "jebnij_efektem <efekt>`. Effects:\nclear\n" + Object.keys(EQList).join("\n")).catch(errFunc);
+				bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "jebnij_efektem <efekt>`. Effects:\nclear\n" + Object.keys(EQList).join("\n")).catch(errDiscord);
 				return;
 			}
 		}
@@ -552,10 +538,10 @@ W sercu i ustach.
 
 		if(!effect) {
 			await player.filterManager.clearEQ();
-			bot.createMessage(msg.channel.id, "Disabled effects for the current playback.").catch(errFunc);
+			bot.createMessage(msg.channel.id, "Disabled effects for the current playback.").catch(errDiscord);
 		} else {
 			await player.filterManager.setEQ(EQList[effect]);
-			bot.createMessage(msg.channel.id, "Applied effect for the current playback.").catch(errFunc);
+			bot.createMessage(msg.channel.id, "Applied effect for the current playback.").catch(errDiscord);
 		}
 	} else if(cmd === "jebnij_reset") {
 		const channel = getChannel(msg);
@@ -573,11 +559,11 @@ W sercu i ustach.
 		}
 
 		await player.filterManager.resetFilters();
-		bot.createMessage(msg.channel.id, "Removed all effects.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Removed all effects.").catch(errDiscord);
 	} else if(cmd === "jebnij_kreche") {
 		const num = parseInt(args[0]);
 		if(isNaN(num)) {
-			bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "jebnij_kreche <predkosc>`").catch(errFunc);
+			bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "jebnij_kreche <predkosc>`").catch(errDiscord);
 			return;
 		}
 
@@ -596,11 +582,11 @@ W sercu i ustach.
 		}
 
 		await player.filterManager.setSpeed(num);
-		bot.createMessage(msg.channel.id, "Changed the speed.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Changed the speed.").catch(errDiscord);
 	} else if(cmd === "jebnij_helu") {
 		const num = parseInt(args[0]);
 		if(isNaN(num)) {
-			bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "jebnij_helu <wysokosc>`").catch(errFunc);
+			bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "jebnij_helu <wysokosc>`").catch(errDiscord);
 			return;
 		}
 
@@ -619,11 +605,11 @@ W sercu i ustach.
 		}
 
 		await player.filterManager.setPitch(num);
-		bot.createMessage(msg.channel.id, "Changed the pitch.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Changed the pitch.").catch(errDiscord);
 	} else if(cmd === "jebnij_ratio") {
 		const num = parseInt(args[0]);
 		if(isNaN(num)) {
-			bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "jebnij_ratio <wspolczynnik>`").catch(errFunc);
+			bot.createMessage(msg.channel.id, "Invalid command. Try `" + config.prefix + "jebnij_ratio <wspolczynnik>`").catch(errDiscord);
 			return;
 		}
 
@@ -642,7 +628,7 @@ W sercu i ustach.
 		}
 
 		await player.filterManager.setRate(num);
-		bot.createMessage(msg.channel.id, "Changed the rate.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Changed the rate.").catch(errDiscord);
 	} else if(cmd === "jebnij_rotation") {
 		const channel = getChannel(msg);
 		if(!channel) {
@@ -659,7 +645,7 @@ W sercu i ustach.
 		}
 
 		await player.filterManager.toggleRotation();
-		bot.createMessage(msg.channel.id, "Applied rotation effect.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Applied rotation effect.").catch(errDiscord);
 	} else if(cmd === "jebnij_vibrato") {
 		const channel = getChannel(msg);
 		if(!channel) {
@@ -676,7 +662,7 @@ W sercu i ustach.
 		}
 
 		await player.filterManager.toggleVibrato();
-		bot.createMessage(msg.channel.id, "Applied vibrato effect.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Applied vibrato effect.").catch(errDiscord);
 	} else if(cmd === "jebnij_tremolo") {
 		const channel = getChannel(msg);
 		if(!channel) {
@@ -693,7 +679,7 @@ W sercu i ustach.
 		}
 
 		await player.filterManager.toggleTremolo();
-		bot.createMessage(msg.channel.id, "Applied tremolo effect.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Applied tremolo effect.").catch(errDiscord);
 	} else if(cmd === "jebnij_lowpass") {
 		const channel = getChannel(msg);
 		if(!channel) {
@@ -710,7 +696,7 @@ W sercu i ustach.
 		}
 
 		await player.filterManager.toggleLowPass();
-		bot.createMessage(msg.channel.id, "Applied lowpass effect.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Applied lowpass effect.").catch(errDiscord);
 	} else if(cmd === "jebnij_nightcore") {
 		const channel = getChannel(msg);
 		if(!channel) {
@@ -727,7 +713,7 @@ W sercu i ustach.
 		}
 
 		await player.filterManager.toggleNightcore();
-		bot.createMessage(msg.channel.id, "Applied nightcore effect.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Applied nightcore effect.").catch(errDiscord);
 	} else if(cmd === "jebnij_vaporwave") {
 		const channel = getChannel(msg);
 		if(!channel) {
@@ -744,7 +730,7 @@ W sercu i ustach.
 		}
 
 		await player.filterManager.toggleVaporwave();
-		bot.createMessage(msg.channel.id, "Applied vaporwave effect.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Applied vaporwave effect.").catch(errDiscord);
 	} else if(cmd === "jebnij_karaoke") {
 		const channel = getChannel(msg);
 		if(!channel) {
@@ -761,7 +747,7 @@ W sercu i ustach.
 		}
 
 		await player.filterManager.toggleKaraoke();
-		bot.createMessage(msg.channel.id, "Applied karaoke effect.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Applied karaoke effect.").catch(errDiscord);
 	} else if(cmd === "wyjdz" || cmd === "wypierdalaj" || cmd === "wykurwiaj") {
 		const channel = getChannel(msg);
 		if(!channel) {
@@ -774,6 +760,6 @@ W sercu i ustach.
 		}
 
 		await player.destroy(msg.author.username + " stopped the playback.");
-		bot.createMessage(msg.channel.id, "Stopped the playback.").catch(errFunc);
+		bot.createMessage(msg.channel.id, "Stopped the playback.").catch(errDiscord);
 	}
 }).connect();

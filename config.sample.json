@@ -1,14 +1,14 @@
 {
-    "token": "",
-    "prefix": "stara_",
-    "spotify": {
-        "clientID": "",
-        "clientSecret": ""
-    },
-    "lavalink": {
-        "host": "127.0.0.1",
-        "port": 2333,
-        "password": "",
-        "session": ""
-    }
+	"token": "",
+	"prefix": "stara_",
+	"spotify": {
+		"clientID": "",
+		"clientSecret": ""
+	},
+	"lavalink": {
+		"host": "127.0.0.1",
+		"port": 2333,
+		"password": "",
+		"session": ""
+	}
 }
